@@ -1,0 +1,128 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kafka-outlet
+  labels:
+    app.kubernetes.io/name: kafka-outlet
+spec:
+  containers:
+  - name: kafka-outlet
+    image: ghcr.io/build-trust/ockam-kafka-sidecar:latest
+    command:
+      - ockam.sh
+      - kafka-outlet
+      - --tcp-listener-address
+      - 0.0.0.0:6000
+      - --bootstrap-server-address
+      - kafka:9092
+      - --enrollment-ticket
+      - /mnt/storage/secrets/ticket
+    env:
+    - name: OCKAM_HOME
+      value: /mnt/storage/data
+    ports:
+    - name: ockam
+      containerPort: 6000
+      protocol: TCP
+    volumeMounts:
+    - name: storage
+      mountPath: /mnt/storage
+  volumes:
+  - name: storage
+    hostPath:
+      path: /mnt/minikube/outlet
+      type: Directory
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-outlet
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-outlet
+  ports:
+    - name: ockam
+      protocol: TCP
+      port: 6000
+      targetPort: ockam
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kafka-consumer
+spec:
+  containers:
+  - name: kafka-consumer-sidecar
+    image: ghcr.io/build-trust/ockam-kafka-sidecar:latest
+    command:
+      - ockam.sh
+      - kafka-consumer
+      - --bootstrap-server-address
+      - 127.0.0.1:9092
+      - --route-to-outlet
+      - /dnsaddr/kafka-outlet/tcp/6000/secure/api
+      - --enrollment-ticket
+      - /mnt/storage/secrets/ticket
+    env:
+    - name: OCKAM_HOME
+      value: /mnt/storage/data
+    volumeMounts:
+      - name: storage
+        mountPath: /mnt/storage
+  - name: kafka-consumer-a
+    image: docker.io/bitnami/kafka:3.4.0-debian-11-r28
+    command:
+      - kafka-console-consumer.sh
+      - --topic
+      - demo-topic
+      - --bootstrap-server
+      - kafka:9092
+  - name: kafka-consumer-b
+    image: docker.io/bitnami/kafka:3.4.0-debian-11-r28
+    command:
+      - kafka-console-consumer.sh
+      - --topic
+      - demo-topic
+      - --bootstrap-server
+      - 127.0.0.1:9092
+  volumes:
+  - name: storage
+    hostPath:
+      path: /mnt/minikube/consumer
+      type: Directory
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kafka-producer
+spec:
+  containers:
+  - name: kafka-producer-sidecar
+    image: ghcr.io/build-trust/ockam-kafka-sidecar:latest
+    command:
+      - ockam.sh
+      - kafka-producer
+      - --bootstrap-server-address
+      - 127.0.0.1:9092
+      - --route-to-outlet
+      - /dnsaddr/kafka-outlet/tcp/6000/secure/api
+      - --enrollment-ticket
+      - /mnt/storage/secrets/ticket
+    env:
+    - name: OCKAM_HOME
+      value: /mnt/storage/data
+    volumeMounts:
+      - name: storage
+        mountPath: /mnt/storage
+  - name: kafka-producer
+    image: docker.io/bitnami/kafka:3.4.0-debian-11-r28
+    command: ["sleep", "infinity"]
+  volumes:
+  - name: storage
+    hostPath:
+      path: /mnt/minikube/producer
+      type: Directory
